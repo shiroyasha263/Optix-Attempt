@@ -57,6 +57,8 @@ protected:
 
 	OptixTraversableHandle buildAccel();
 
+	void createTextures();
+
 protected:
 
 	CUcontext cudaContext;
@@ -90,7 +92,12 @@ protected:
 
 	const Model* model;
 	std::vector<CUDABuffer> vertexBuffer;
+	std::vector<CUDABuffer> normalBuffer;
+	std::vector<CUDABuffer> texcoordBuffer;
 	std::vector<CUDABuffer> indexBuffer;
 	//! buffer that keeps the (final, compacted) accel structure
 	CUDABuffer asBuffer;
+	std::vector<cudaArray_t> textureArrays;
+	// This thing is like a look up for all textures
+	std::vector<cudaTextureObject_t> textureObjects;
 };

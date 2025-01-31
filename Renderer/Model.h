@@ -12,13 +12,24 @@ struct TriangleMesh {
 
 	// Material Properties
 	glm::vec3 diffuse;
+	int diffuseTextureID{ -1 };
+};
+
+struct Texture {
+	~Texture() { if (pixel) delete[] pixel; }
+
+	uint32_t *pixel;
+	glm::ivec2 resolution{ -1 };
 };
 
 struct Model {
-	~Model() 
-	{ for(auto mesh: meshes) delete mesh; }
+	~Model() { 
+		for (auto mesh: meshes) delete mesh;
+		for (auto texture : textures) delete texture;
+	}
 
 	std::vector<TriangleMesh*> meshes;
+	std::vector<Texture*> textures;
 	// ! Bounding box of all vertices in the model
 	glm::vec3 boundsMin;
 	glm::vec3 boundsMax;

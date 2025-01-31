@@ -11,7 +11,11 @@ struct StructuredBuffer {
 struct TriangleMeshSBTData {
 	float3 color;
 	StructuredBuffer<float3> vertex;
+	StructuredBuffer<float3> normal;
+	StructuredBuffer<float2> texcoord;
 	StructuredBuffer<int3> index;
+	bool hasTexture;
+	CUtexObject texture;
 };
 
 struct LaunchParams {

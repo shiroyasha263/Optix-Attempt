@@ -31,31 +31,58 @@ RaytracingAccelerationStructure traversable;
 // one group of them to set up the SBT)
 //------------------------------------------------------------------------------
 
-float3 randomColor(uint i) {
-    int r = i * 13 * 17 + 0x234235;
-    int g = i * 7 * 3 * 5 + 0x773477;
-    int b = i * 11 * 19 + 0x223766;
-    return float3((r & 255) / 255.f,
-                    (g & 255) / 255.f,
-                    (b & 255) / 255.f);
-}
-
 [shader("closesthit")]
 void closesthit_radiance(
     inout float3 prd: SV_RayPayload, 
+    in float2 barycentrics,
     uniform float3 color,
     uniform RWStructuredBuffer<float3> vertices,
-    uniform RWStructuredBuffer<int3> indices) {
+    uniform RWStructuredBuffer<float3> normals,
+    uniform RWStructuredBuffer<float2> texcoords,
+    uniform RWStructuredBuffer<int3> indices,
+    uniform bool hasTexture,
+    uniform Texture2D texture) {
 
     const int primID = PrimitiveIndex();
     int3 index = indices[primID];
-    float3 A = vertices[index.x];
-    float3 B = vertices[index.y];
-    float3 C = vertices[index.z];
-    float3 Ng = normalize(cross(B - A, C - A));
+    const float u = barycentrics.x;
+    const float v = barycentrics.y;
+
+    // ------------------------------------------------------------------
+    // compute normal, using either shading normal (if avail), or
+    // geometry normal (fallback)
+    // ------------------------------------------------------------------
+    float3 N;
+    uint numNormals, normalStride;
+    normals.GetDimensions(numNormals, normalStride);
+    
+    // Shading normals being used
+    if (numNormals > 0) {
+        N = (1.f - u - v) * normals[index.x]
+            + u * normals[index.y]
+            + v * normals[index.z];
+    } else { // Geometric normals being used
+        const float3 A = vertices[index.x];
+        const float3 B = vertices[index.y];
+        const float3 C = vertices[index.z];
+        N = normalize(cross(B - A, C - A));
+    }
+
+    float3 diffuseColor = color;
+    uint numTexcoords, texcoordStride;
+    texcoords.GetDimensions(numTexcoords, texcoordStride);
+    if (hasTexture && numTexcoords > 0) {
+        const float2 tc = (1.f - u - v) * texcoords[index.x]
+                          + u * texcoords[index.y]
+                          + v * texcoords[index.z];
+        SamplerState temp;
+        float4 fromTexture = texture.Sample(temp, tc);
+        diffuseColor *= fromTexture.rgb;
+    }
+
     float3 rayDir = WorldRayDirection();
-    float cosDN = .2f + .8f * abs(dot(rayDir, Ng));
-    prd = cosDN * color;
+    float cosDN = 0.2f + 0.8f * abs(dot(N, rayDir));
+    prd = diffuseColor * 0.2f + cosDN * diffuseColor * 0.8f;
 }
 
 [shader("anyhit")]

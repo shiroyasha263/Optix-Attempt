@@ -1,7 +1,10 @@
 #include "Model.h"
-#define TINYOBJLOADER_IMPLEMENTATION
 
+#define TINYOBJLOADER_IMPLEMENTATION
 #include "3rdParty/tiny_obj_loader.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "3rdParty/stb_image.h"
 
 #include <iostream>
 #include <set>
@@ -68,14 +71,69 @@ int addVertex(TriangleMesh *mesh,
 			mesh->texcoord.push_back(texcoord_array[idx.texcoord_index]);
 	}
 
+	// just for sanity's sake:
+	if (mesh->texcoord.size() > 0)
+		mesh->texcoord.resize(mesh->vertex.size());
+	// just for sanity's sake:
+	if (mesh->normal.size() > 0)
+		mesh->normal.resize(mesh->vertex.size());
+
 	return newID;
+}
+
+/*! load a texture (if not already loaded), and return its ID in the
+	model's textures[] vector. Textures that could not get loaded
+	return -1 */
+int loadTexture(Model* model,
+				std::map<std::string, int> &knownTextures,
+				const std::string &inFileName,
+				const std::string &modelPath) {
+	
+	// If the input file is empty send this
+	if (inFileName == "")
+		return -1;
+
+	// Check if the file is already loaded, and if so return the file index
+	if (knownTextures.find(inFileName) != knownTextures.end())
+		return knownTextures[inFileName];
+
+	// Fix any file name issues and get the exact file path
+	std::string fileName = inFileName;
+	for (auto& c : fileName)
+		if (c == '\\') c = '/';
+	fileName = modelPath + "/" + fileName;
+
+	// Get the image and its resolution
+	glm::ivec2 res;
+	int comp;
+
+	// STBI has a habit of inversing images
+	stbi_set_flip_vertically_on_load(true);
+	unsigned char* image = stbi_load(fileName.c_str(), &res.x, &res.y, &comp, STBI_rgb_alpha);
+	stbi_set_flip_vertically_on_load(false);
+
+	int textureID = -1;
+	if (image) {
+		textureID = (int)model->textures.size();
+		Texture* texture = new Texture;
+		texture->resolution = res;
+		texture->pixel = (uint32_t*)image;
+
+		model->textures.push_back(texture);
+	}
+	else {
+		std::cout << "Could not load texture from " << fileName << "!\n";
+	}
+
+	knownTextures[inFileName] = textureID;
+	return textureID;
 }
 
 Model* loadOBJ(const std::string& objFile) {
 	Model* model = new Model;
 
 	// Check if there is a mtlDirectory
-	const std::string mtlDir
+	const std::string modelDir
 		= objFile.substr(0, objFile.rfind('/') + 1);
 
 	// These are the things that we will get from our files
@@ -92,12 +150,12 @@ Model* loadOBJ(const std::string& objFile) {
 							&err,
 							&err,
 							objFile.c_str(),
-							mtlDir.c_str(),
+							modelDir.c_str(),
 							/*triangulate*/ true);
 
 	// Read error handling
 	if (!readOK)
-		throw std::runtime_error("Could not read OBJ Model from " + objFile + ": " + mtlDir + " : " + err);
+		throw std::runtime_error("Could not read OBJ Model from " + objFile + ": " + modelDir + " : " + err);
 	if (materials.empty())
 		throw std::runtime_error("Could not parse materials. . . . . ");
 
@@ -116,6 +174,8 @@ Model* loadOBJ(const std::string& objFile) {
 
 		// Get a index object to int mapping
 		std::map<tinyobj::index_t, int> knownVertices;
+		// Get a filename to int mapping
+		std::map<std::string, int> knownTexture;
 
 		// For every material ID loop over
 		for (auto materialID : materialIDs) {
@@ -141,7 +201,7 @@ Model* loadOBJ(const std::string& objFile) {
 				mesh->index.push_back(idx);
 				// Anything with the same material ID is given the same diffuse color
 				mesh->diffuse = (const glm::vec3&)materials[materialID].diffuse;
-				mesh->diffuse = randomColor(materialID);
+				mesh->diffuseTextureID = loadTexture(model, knownTexture, materials[materialID].diffuse_texname, modelDir);
 			}
 
 			if (mesh->vertex.empty())
@@ -167,5 +227,6 @@ Model* loadOBJ(const std::string& objFile) {
 	model->boundsSpan = model->boundsMax - model->boundsMin;
 
 	std::cout << "created a total of " << model->meshes.size() << " meshes" << std::endl;
+	std::cout << "Loaded " << model->textures.size() << " textures" << std::endl;
 	return model;
 }
