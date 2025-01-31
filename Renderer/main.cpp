@@ -87,7 +87,7 @@ struct SampleWindow : public osc::GLFCameraWindow {
   world, then exit */
 extern "C" int main(int ac, char** av) {
     try {
-        Model* model = loadOBJ("C:/Users/Vishu.Main-Laptop/Downloads/optix-examples-main/models/sponza/sponza.obj");
+        Model* model = loadModel("C:/Users/Vishu.Main-Laptop/Downloads/optix-examples-main/models/sponza/sponza.obj");
 
         std::cout << "Model loaded perfectly!\n";
 

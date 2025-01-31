@@ -6,6 +6,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "3rdParty/stb_image.h"
 
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
 #include <iostream>
 #include <set>
 #include <limits>
@@ -201,6 +205,8 @@ Model* loadOBJ(const std::string& objFile) {
 				mesh->index.push_back(idx);
 				// Anything with the same material ID is given the same diffuse color
 				mesh->diffuse = (const glm::vec3&)materials[materialID].diffuse;
+				std::cout << materials[materialID].diffuse_texname << std::endl;
+				std::cout << modelDir << std::endl;
 				mesh->diffuseTextureID = loadTexture(model, knownTexture, materials[materialID].diffuse_texname, modelDir);
 			}
 
@@ -228,5 +234,96 @@ Model* loadOBJ(const std::string& objFile) {
 
 	std::cout << "created a total of " << model->meshes.size() << " meshes" << std::endl;
 	std::cout << "Loaded " << model->textures.size() << " textures" << std::endl;
+	return model;
+}
+
+TriangleMesh* processMesh(Model* model, aiMesh* mesh, const aiScene* scene, std::string modelDir) {
+	TriangleMesh* triMesh = new TriangleMesh;
+
+	for (int idx = 0; idx < mesh->mNumVertices; idx++) {
+		triMesh->vertex.push_back(glm::vec3(
+			mesh->mVertices[idx].x, mesh->mVertices[idx].y, mesh->mVertices[idx].z));
+
+		if (mesh->HasNormals())
+			triMesh->normal.push_back(glm::vec3(
+				mesh->mNormals[idx].x, mesh->mNormals[idx].y, mesh->mNormals[idx].z));
+
+		if (mesh->mTextureCoords[0])
+			triMesh->texcoord.push_back(glm::vec2(
+				mesh->mTextureCoords[0][idx].x, mesh->mTextureCoords[0][idx].y));
+	}
+
+	// UPDATE NEEDED!!!!!!!!!!!!!
+	// ONLY WORKS FOR TRIANGLESSS
+	for (int i = 0; i < mesh->mNumFaces; i++) {
+		aiFace face = mesh->mFaces[i];
+		for (unsigned int j = 0; j < face.mNumIndices; j = j + 3)
+			triMesh->index.push_back(glm::ivec3(face.mIndices[j], face.mIndices[j + 1], face.mIndices[j + 2]));
+	}
+
+	// Get a filename to int mapping
+	std::map<std::string, int> knownTexture;
+
+	if (mesh->mMaterialIndex >= 0) {
+		aiString str;
+		scene->mMaterials[mesh->mMaterialIndex]->GetTexture(aiTextureType_DIFFUSE, 0, &str);
+		std::string texname = str.C_Str();
+		texname = texname;
+		triMesh->diffuse = glm::vec3(1.f);
+		triMesh->diffuseTextureID = loadTexture(model, knownTexture, texname, modelDir);
+	}
+
+	return triMesh;
+}
+
+void processNode(Model* model, aiNode* node, const aiScene* scene, std::string modelDir)
+{
+	// process all the node's meshes (if any)
+	for (unsigned int i = 0; i < node->mNumMeshes; i++)
+	{
+		aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+		model->meshes.push_back(processMesh(model, mesh, scene, modelDir));
+	}
+	// then do the same for each of its children
+	for (unsigned int i = 0; i < node->mNumChildren; i++)
+	{
+		processNode(model, node->mChildren[i], scene, modelDir);
+	}
+}
+
+Model* loadModel(const std::string& modelFile) {
+	Model* model = new Model;
+
+	Assimp::Importer import;
+	const aiScene * scene = import.ReadFile(modelFile, aiProcess_Triangulate);
+
+	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+	{
+		throw std::runtime_error("ERROR::ASSIMP");
+	}
+	std::string modelDir = modelFile.substr(0, modelFile.find_last_of('/'));
+
+	std::cout << "Loading Model Using ASSIMP\n";
+
+	processNode(model, scene->mRootNode, scene, modelDir);
+
+	// of course, you should be using tbb::parallel_for for stuff
+	// like this:
+	model->boundsMin = glm::vec3(std::numeric_limits<float>::max());
+	model->boundsMax = glm::vec3(-std::numeric_limits<float>::max());
+
+	for (auto mesh : model->meshes) {
+		for (auto vtx : mesh->vertex) {
+			model->boundsMin = glm::min(model->boundsMin, vtx);
+			model->boundsMax = glm::max(model->boundsMax, vtx);
+		}
+	}
+
+	model->boundsCenter = model->boundsMin + (model->boundsMax - model->boundsMin) * .5f;
+	model->boundsSpan = model->boundsMax - model->boundsMin;
+
+	std::cout << "created a total of " << model->meshes.size() << " meshes" << std::endl;
+	std::cout << "Loaded " << model->textures.size() << " textures" << std::endl;
+
 	return model;
 }

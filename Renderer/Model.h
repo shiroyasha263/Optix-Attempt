@@ -39,3 +39,5 @@ struct Model {
 
 
 Model* loadOBJ(const std::string& objFile);
+
+Model* loadModel(const std::string& modelFile);
