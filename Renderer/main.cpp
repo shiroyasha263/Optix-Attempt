@@ -82,26 +82,36 @@ struct SampleWindow : public osc::GLFCameraWindow {
     std::vector<uint32_t> pixels;
 };
 
+inline uint32_t XOrShift32(uint32_t* state)
+{
+    uint32_t x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
 
 /*! main entry point to this example - initially optix, print hello
   world, then exit */
 extern "C" int main(int ac, char** av) {
     try {
-        Model* model = loadModel("C:/Users/Vishu.Main-Laptop/Downloads/optix-examples-main/models/sponza/sponza.obj");
-
+        Model* model = loadOBJ("C:/Users/Vishu.Main-Laptop/Downloads/optix-examples-main/models/CornellBox/CornellBox-Original.obj");
+        
         std::cout << "Model loaded perfectly!\n";
-
+        
         Camera camera = { /*from*/glm::vec3(model->boundsCenter) + glm::vec3(2.f),
                         /* at */glm::vec3(model->boundsCenter),
                         /* up */glm::vec3(0.f,1.f,0.f) };
-
+        
         // something approximating the scale of the world, so the
         // camera knows how much to move for any given user interaction:
         const float worldScale = glm::length(model->boundsSpan);
-
+        
         SampleWindow* window = new SampleWindow("Optix 7 Course Example",
                                                 model, camera, worldScale);
         window->run();
+
     }
     catch (std::runtime_error& e) {
         std::cout << TERMINAL_RED << "FATAL ERROR: " << e.what()

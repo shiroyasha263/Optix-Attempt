@@ -539,6 +539,7 @@ void SampleRenderer::render() {
 	// want to use streams and double-buffering, but for this simple
 	// example, this will have to do)
 	CUDA_SYNC_CHECK();
+	launchParams.frameID++;
 }
 
 void SampleRenderer::resize(const glm::ivec2& newSize) {
@@ -549,6 +550,7 @@ void SampleRenderer::resize(const glm::ivec2& newSize) {
 	launchParams.fbSize = int2{ newSize.x, newSize.y };
 	launchParams.colorBuffer.data = (uint32_t*)colorBuffer.d_ptr;
 	launchParams.colorBuffer.size = newSize.x * newSize.y;
+	launchParams.frameID = 0;
 }
 
 void SampleRenderer::setCamera(const Camera& camera) {
@@ -563,6 +565,7 @@ void SampleRenderer::setCamera(const Camera& camera) {
 	glm::vec3 vertical = cosFovy * glm::normalize(glm::cross(horizontal, dir));
 	launchParams.camera.horizontal = *((float3*)(&horizontal));
 	launchParams.camera.vertical = *((float3*)(&vertical));
+	launchParams.frameID = 0;
 }
 
 void SampleRenderer::downloadPixels(uint32_t h_pixels[]) {

@@ -30,4 +30,5 @@ struct LaunchParams {
 	} camera;
 
 	OptixTraversableHandle traversable;
+	unsigned int frameID{ 0 };
 };

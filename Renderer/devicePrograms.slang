@@ -20,6 +20,7 @@ RWStructuredBuffer<uint> colorBuffer;
 int2 fbSize;
 Camera camera;
 RaytracingAccelerationStructure traversable;
+uint frameID;
 
 //------------------------------------------------------------------------------
 // closest hit and anyhit programs for radiance-type rays.
@@ -30,6 +31,27 @@ RaytracingAccelerationStructure traversable;
 // create a single, dummy, set of them (we do have to have at least
 // one group of them to set up the SBT)
 //------------------------------------------------------------------------------
+
+inline uint32_t XORShift(in uint32_t *state) {
+    uint32_t x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+float rand(in uint32_t *state) {
+    float x = ((float)XORShift(state) / 4294967295);
+    return x;
+}
+
+float3 random_vec3(in uint32_t *state) {
+    float x = rand(state);
+    float y = rand(state);
+    float z = rand(state);
+    return float3(x, y, z);
+}
 
 [shader("closesthit")]
 void closesthit_radiance(
@@ -103,7 +125,10 @@ void anyhit_radiance() {
 [shader("miss")]
 void miss_radiance(inout float3 prd: SV_RayPayLoad) {
     // set to constant white as background color
-    prd = float3(1.f, 1.f, 1.f);
+    float3 rayDir = WorldRayDirection();
+    float a = 0.5 * (rayDir.y + 1.0);
+    prd = (1.0 - a) * float3(1.f, 1.0f, 1.0f) + a * float3(0.5f, 0.7f, 1.0f);
+    // prd = float3(1.f, 1.f, 1.f);
 }
 
 //------------------------------------------------------------------------------
@@ -117,33 +142,50 @@ void renderFrame() {
     // our per-ray data for this example. what we initialize it to
     // won't matter, since this value will be overwritten by either
     // the miss or hit program, anyway
-    float3 pixelColorPRD = float3(0.f);
+    float3 pixelColorPRD;
+    float3 accumColor = float3(0.f);
 
-    // normalized screen plane position, in [0,1]^2
-    const float2 screen = float2(ix + .5f, iy + .5f) * float2(1.f / fbSize.x, 1.f / fbSize.y);
+    uint32_t state = ix + iy * fbSize.x;// + frameID * fbSize.x * fbSize.y;
+    // Cleaning for random generation
+    XORShift(&state);
 
-    RayDesc ray;
-    ray.Origin = camera.position;
-    ray.Direction = normalize(camera.direction + 
+    int raysPerPixel = 4;
+
+    for (int i = 0; i < raysPerPixel; i++) {
+        // Moved pixels
+        float x_shift = rand(&state);
+        float y_shift = rand(&state);
+
+        // normalized screen plane position, in [0,1]^2
+        const float2 screen = float2(ix + x_shift, iy + y_shift) * float2(1.f / fbSize.x, 1.f / fbSize.y);
+
+        RayDesc ray;
+        ray.Origin = camera.position;
+        ray.Direction = normalize(camera.direction + 
                               (screen.x - 0.5f) * camera.horizontal +
                               (screen.y - 0.5f) * camera.vertical);
-    ray.TMin = 0.f;
-    ray.TMax = 1e20f;
+        ray.TMin = 0.f;
+        ray.TMax = 1e20f;
 
-    TraceRay(
+        pixelColorPRD = float3(0.f);
+
+        TraceRay(
              traversable,   // This is the thing that stores our accel
-             RAY_FLAG_NONE, // Ray Flags
-             0xff,          // Instance inclusion mask
-             0,             // Hit index?? Offset for hitgroup indexing?
-             1,             // Ray type count
-             0,             // Miss ray index
-             ray,           // Ray
-             pixelColorPRD  // Per pixel payload data that we want to move around
-    );
+                 RAY_FLAG_NONE, // Ray Flags
+                 0xff,          // Instance inclusion mask
+                 0,             // Hit index?? Offset for hitgroup indexing?
+                 1,             // Ray type count
+                 0,             // Miss ray index
+                 ray,           // Ray
+                 pixelColorPRD  // Per pixel payload data that we want to move around
+        );
 
-    const int r = int(255.99f * pixelColorPRD.x);
-    const int g = int(255.99f * pixelColorPRD.y);
-    const int b = int(255.99f * pixelColorPRD.z);
+        accumColor += (pixelColorPRD) / raysPerPixel;
+    }
+
+    const int r = int(255.99f * accumColor.x);
+    const int g = int(255.99f * accumColor.y);
+    const int b = int(255.99f * accumColor.z);
 
     // convert to 32-bit rgba value (we explicitly set alpha to 0xff
     // to make stb_image_write happy ...

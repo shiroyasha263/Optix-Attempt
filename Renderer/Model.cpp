@@ -251,6 +251,11 @@ TriangleMesh* processMesh(Model* model, aiMesh* mesh, const aiScene* scene, std:
 		if (mesh->mTextureCoords[0])
 			triMesh->texcoord.push_back(glm::vec2(
 				mesh->mTextureCoords[0][idx].x, mesh->mTextureCoords[0][idx].y));
+
+		if (mesh->mColors[0] != nullptr)
+			triMesh->diffuse = glm::vec3(mesh->mColors[0][idx].r, mesh->mColors[0][idx].g, mesh->mColors[0][idx].b);
+		else
+			triMesh->diffuse = glm::vec3(1.f);
 	}
 
 	// UPDATE NEEDED!!!!!!!!!!!!!
@@ -269,7 +274,6 @@ TriangleMesh* processMesh(Model* model, aiMesh* mesh, const aiScene* scene, std:
 		scene->mMaterials[mesh->mMaterialIndex]->GetTexture(aiTextureType_DIFFUSE, 0, &str);
 		std::string texname = str.C_Str();
 		texname = texname;
-		triMesh->diffuse = glm::vec3(1.f);
 		triMesh->diffuseTextureID = loadTexture(model, knownTexture, texname, modelDir);
 	}
 
