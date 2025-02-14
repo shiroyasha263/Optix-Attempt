@@ -43,36 +43,36 @@ uint frameID;
 // one group of them to set up the SBT)
 //------------------------------------------------------------------------------
 
-const int MIN = -2147483648;
-const int MAX = 2147483648;
-const float PI = 3.14159;
-const int RAND_MAX = 32767;
+static const int MIN = -2147483648;
+static const int MAX = 2147483647;
+static const float PI = 3.14159;
+static const uint RAND_MAX = 4294967295;
 
 inline int xorshift(in int value) {
     value ^= value << 13;
     value ^= value >> 17;
     value ^= value << 5;
+    return (value < 0) ? ~value + 1 : value;
+}
+
+inline int LCGRand(in int value) {
+    value = (value * 1103515245 + 12345) & 0x7fffffff;
     return value;
 }
 
 int nextInt(inout int seed) {
-    seed = xorshift(seed);
+    seed = LCGRand(seed);
     return seed;
 }
 
 float nextFloat(inout int seed) {
-    seed = xorshift(seed);
+    seed = LCGRand(seed);
     // FIXME: This should have been a seed mapped from MIN to MAX to 0...1 instead
-    return abs(fract(float(seed - MIN) / (MIN + MAX)));
+    return 2 * fract(float(seed) / (RAND_MAX - 1));
 }
 
 float nextFloat(inout int seed, in float max) {
     return nextFloat(seed) * max;
-}
-
-uint64_t rand(inout uint64_t next) {
-    next = next * 1103515245 + 12345;
-    return next;
 }
 
 // float3 random_vec3(inout int seed) {
@@ -213,8 +213,7 @@ void renderFrame() {
     // float3 pixelColorPRD;
     // float3 accumColor = float3(0.f);
 
-    int seed = ix + iy * fbSize.x; //+ frameID; // + frameID * fbSize.x * fbSize.y;
-    uint64_t next = seed;
+    int seed = ix + iy * fbSize.x + frameID + 1; //+ frameID; // + frameID * fbSize.x * fbSize.y;
 
     // int raysPerPixel = 100;
     // int max_depth = 10;
@@ -269,12 +268,13 @@ void renderFrame() {
     // }
 
     float3 pixelColorPRD;
-    uint64_t xshift = rand(next);
+    // seed = LCGRand(seed);
+    // float xshift = 2 * fract(float(seed) / (RAND_MAX - 1));
 
-    if (ix == 0 && iy == 0 && frameID == 0)
-        printf("%lld", (uint64_t)xshift);
+    float zshift = float(MIN);
 
-    float yshift = rand(next);
+    if (ix == 0.f && iy == 0.f)
+        printf("%f\n", zshift);
 
     const float2 screen = float2(ix + 0.5f, iy + 0.5f) * float2(1.f / fbSize.x, 1.f / fbSize.y);
 
