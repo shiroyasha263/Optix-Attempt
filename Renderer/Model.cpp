@@ -205,8 +205,6 @@ Model* loadOBJ(const std::string& objFile) {
 				mesh->index.push_back(idx);
 				// Anything with the same material ID is given the same diffuse color
 				mesh->diffuse = (const glm::vec3&)materials[materialID].diffuse;
-				std::cout << materials[materialID].diffuse_texname << std::endl;
-				std::cout << modelDir << std::endl;
 				mesh->diffuseTextureID = loadTexture(model, knownTexture, materials[materialID].diffuse_texname, modelDir);
 			}
 
