@@ -87,6 +87,7 @@ protected:
 	CUDABuffer launchParamsBuffer;
 
 	CUDABuffer colorBuffer;
+	CUDABuffer accumBuffer;
 
 	Camera lastSetCamera;
 

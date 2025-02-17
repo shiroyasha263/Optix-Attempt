@@ -495,6 +495,17 @@ void SampleRenderer::buildSBT() {
 		OPTIX_CHECK(optixSbtRecordPackHeader(hitgroupPGs[0], &rec));
 
 		rec.data.color = *((float3*)(&mesh->diffuse));
+		rec.data.emmisive = *((float3*)(&mesh->emmissive));
+		rec.data.specular = *((float3*)(&mesh->specular));
+		rec.data.shininess = (1000.f - mesh->shininess) / (800.f);
+		rec.data.ior = mesh->ior;
+		rec.data.matType = rec.data.DIFFUSE;
+
+		if (mesh->illum == 7 || mesh->illum == 6)
+			rec.data.matType = rec.data.DIELECTRIC;
+		else if (rec.data.specular.x > 0 || rec.data.specular.y > 0 || rec.data.specular.z > 0)
+			rec.data.matType = rec.data.SPECULAR;
+
 		if (mesh->diffuseTextureID >= 0) {
 			rec.data.hasTexture = true;
 			rec.data.texture = textureObjects[mesh->diffuseTextureID];
@@ -546,10 +557,13 @@ void SampleRenderer::resize(const glm::ivec2& newSize) {
 	if (newSize.x == 0 | newSize.y == 0) return;
 
 	colorBuffer.resize(newSize.x * newSize.y * sizeof(uint32_t));
+	accumBuffer.resize(newSize.x * newSize.y * sizeof(float3));
 
 	launchParams.fbSize = int2{ newSize.x, newSize.y };
 	launchParams.colorBuffer.data = (uint32_t*)colorBuffer.d_ptr;
 	launchParams.colorBuffer.size = newSize.x * newSize.y;
+	launchParams.accumBuffer.data = (float3*)accumBuffer.d_ptr;
+	launchParams.accumBuffer.size = newSize.x * newSize.y;
 	launchParams.frameID = 0;
 }
 

@@ -5,6 +5,12 @@ struct Camera {
     float3 vertical;
 };
 
+enum MaterialType {
+    DIFFUSE,
+    SPECULAR,
+    DIELECTRIC
+};
+
 struct Payload {
     float3 attenuation;
     uint seed;
@@ -28,6 +34,7 @@ struct Payload {
 // Launch Params
 
 RWStructuredBuffer<uint> colorBuffer;
+RWStructuredBuffer<float3> accumBuffer;
 int2 fbSize;
 Camera camera;
 RaytracingAccelerationStructure traversable;
@@ -95,7 +102,51 @@ inline float linear_to_gamma(in float linear_component)
     if (linear_component > 0)
         return sqrt(linear_component);
 
-    return 0;
+    return 0.f;
+}
+
+float3 diffuseScatter(in float3 normal, in bool front_face, inout uint seed) {
+    float3 direction;
+
+    if (!front_face)
+        direction = -normal + WorldRayDirection();
+    else
+        direction = normal + unit_on_sphere(seed);
+
+    return direction;
+}
+
+float3 metalScatter(in float3 rayDir, in float3 normal, in float fuzz, in bool front_face, inout uint seed) {
+    float3 direction;
+
+    float scale = abs(dot(normal, rayDir));
+
+    if (!front_face)
+        direction = rayDir - 2 * scale * normal + fuzz * unit_on_sphere(seed);
+    else
+        direction = rayDir + 2 * scale * normal + fuzz * unit_on_sphere(seed);
+
+    return direction;
+}
+
+float3 dielectricScatter(in float3 rayDir, in float3 normal, in float ior, in bool front_face, inout uint seed) {
+    float3 direction;
+
+    float ri = front_face ? (1.f / ior) : ior;
+
+    float cos_theta = min(dot(-rayDir, normal), 1.0f);
+    float sin_theta = sqrt(1.0f - cos_theta * cos_theta);
+
+    bool cannot_refract = ri * sin_theta > 1.0;
+
+    if (cannot_refract)
+        return metalScatter(rayDir, normal, 0.f, front_face, seed);
+
+    float3 r_out_perp = ri * (rayDir + cos_theta * normal);
+    float dist = dot(r_out_perp, r_out_perp);
+    float3 r_out_parallel = -sqrt(fabs(1.0f - dist)) * normal;
+
+    return r_out_parallel + r_out_perp;
 }
 
 [shader("closesthit")]
@@ -103,6 +154,11 @@ void closesthit_radiance(
     inout Payload prd: SV_RayPayload, 
     in float2 barycentrics,
     uniform float3 color,
+    uniform float3 emmissive,
+    uniform float3 specular,
+    uniform float shininess,
+    uniform float ior,
+    uniform MaterialType matType,
     uniform RWStructuredBuffer<float3> vertices,
     uniform RWStructuredBuffer<float3> normals,
     uniform RWStructuredBuffer<float2> texcoords,
@@ -157,15 +213,24 @@ void closesthit_radiance(
     cosDN = abs(cosDN);
 
     float err = 1e-5f;
-    if (diffuseColor.x >= 0.75f)
-        prd.emitted = float3(100.f, 100.f, 100.f);
+    prd.emitted = 10.f * emmissive;
     prd.radiance += prd.emitted * prd.attenuation;
-    prd.attenuation *= cosDN * diffuseColor;
-    if (!front_face)
-        prd.direction = -sN + unit_on_sphere(prd.seed);
-    else
-        prd.direction = sN + unit_on_sphere(prd.seed);
-    prd.origin = WorldRayOrigin() + (RayTCurrent() - err) * rayDir;
+    if (matType == MaterialType.DIFFUSE) {
+        prd.attenuation *= cosDN * diffuseColor;
+        prd.direction = diffuseScatter(sN, front_face, prd.seed);
+        prd.origin = WorldRayOrigin() + (RayTCurrent()) * rayDir + err * prd.direction;
+    }
+    else if (matType == MaterialType.SPECULAR) {
+        prd.attenuation *= cosDN * specular;
+        prd.direction = metalScatter(rayDir, sN, shininess, front_face, prd.seed);
+        if (dot(prd.direction, sN) < 0)
+            prd.done = true;
+        prd.origin = WorldRayOrigin() + (RayTCurrent()) * rayDir + err * prd.direction;
+    }
+    else if (matType == MaterialType.DIELECTRIC) {
+        prd.direction = dielectricScatter(normalize(rayDir), normalize(sN), ior, front_face, prd.seed);
+        prd.origin = WorldRayOrigin() + (RayTCurrent()) * rayDir + err * prd.direction;
+    }
 }
 
 [shader("anyhit")]
@@ -192,6 +257,7 @@ void miss_radiance(inout Payload prd: SV_RayPayLoad) {
     float a = 0.5f * (rayDir.y + 1.0);
     // prd.radiance = (1.0f - a) * float3(1.f, 1.0f, 1.0f) + a * float3(0.5f, 0.7f, 1.0f);
     prd.emitted = (1.0f - a) * float3(1.f, 1.0f, 1.0f) + a * float3(0.5f, 0.7f, 1.0f);
+    // prd.emitted = float3(0.f, 0.f, 0.f);
     prd.radiance += prd.attenuation * prd.emitted;
     prd.done = true;
 
@@ -211,48 +277,51 @@ void renderFrame() {
     // won't matter, since this value will be overwritten by either
     // the miss or hit program, anyway
     float3 pixelColorPRD;
-    float3 accumColor = float3(0.f);
 
-    uint seed = ix + iy * fbSize.x + frameID + 1; //+ frameID; // + frameID * fbSize.x * fbSize.y;
+    uint seed = ix + iy * fbSize.x + 1 + frameID; //+ frameID; // + frameID * fbSize.x * fbSize.y;
+    seed = nextInt(seed) + frameID;
+    const uint fbIndex = ix + iy * fbSize.x;
+
+    float3 accumColor = (accumBuffer[fbIndex] * frameID) / (frameID + 1.f);
 
     int raysPerPixel = 4;
     int max_depth = 10;
     Payload test_PRD;
     test_PRD.seed = seed;
-    
+
     for (int i = 0; i < raysPerPixel; i++) {
         // Moved pixels
         float x_shift = nextFloat(test_PRD.seed);
         float y_shift = nextFloat(test_PRD.seed);
-    
+
         // normalized screen plane position, in [0,1]^2
         const float2 screen = float2(ix + x_shift, iy + y_shift) * float2(1.f / fbSize.x, 1.f / fbSize.y);
-    
+
         RayDesc ray;
         ray.Origin = camera.position;
         ray.Direction = normalize(camera.direction + 
                               (screen.x - 0.5f) * camera.horizontal +
-                              (screen.y - 0.5f) * camera.vertical);
+                                      (screen.y - 0.5f) * camera.vertical);
         ray.TMin = 0.f;
         ray.TMax = 1e20f;
-    
+
         test_PRD.attenuation = float3(1.f, 1.f, 1.f);
         test_PRD.direction = ray.Direction;
         test_PRD.origin = ray.Origin;
         test_PRD.emitted = float3(0.f, 0.f, 0.f);
         test_PRD.done = false;
         test_PRD.radiance = float3(0.f, 0.f, 0.f);
-    
+
         pixelColorPRD = float3(0.f, 0.f, 0.f);
-    
+
         for (int j = 0; j < max_depth && test_PRD.done == false; j++) {
             // pixelColorPRD = float3(0.f);
-    
+
             ray.Origin = test_PRD.origin;
             ray.Direction = test_PRD.direction;
             ray.TMin = 0.f;
             ray.TMax = 1e20f;
-    
+
             TraceRay(
                      traversable,   // This is the thing that stores our accel
                      RAY_FLAG_NONE, // Ray Flags
@@ -261,15 +330,17 @@ void renderFrame() {
                      1,             // Ray type count
                      0,             // Miss ray index
                      ray,           // Ray
-                     test_PRD  // Per pixel payload data that we want to move around
+                     test_PRD       // Per pixel payload data that we want to move around
             );
         }
-        accumColor += (test_PRD.radiance) / raysPerPixel;
+        accumColor += ((test_PRD.radiance) / (raysPerPixel * (frameID + 1.f)));
     }
 
-    const int r = int(255.99f * clamp(accumColor.x, 0.f, 1.f));
-    const int g = int(255.99f * clamp(accumColor.y, 0.f, 1.f));
-    const int b = int(255.99f * clamp(accumColor.z, 0.f, 1.f));
+    accumBuffer[fbIndex] = accumColor;
+
+    const int r = int(255.99f * clamp(linear_to_gamma(accumColor.x), 0.f, 1.f));
+    const int g = int(255.99f * clamp(linear_to_gamma(accumColor.y), 0.f, 1.f));
+    const int b = int(255.99f * clamp(linear_to_gamma(accumColor.z), 0.f, 1.f));
 
     // convert to 32-bit rgba value (we explicitly set alpha to 0xff
     // to make stb_image_write happy ...
@@ -277,6 +348,5 @@ void renderFrame() {
     | (r << 0) | (g << 8) | (b << 16);
 
     // and write frame buffer
-    const uint fbIndex = ix + iy * fbSize.x;
     colorBuffer[fbIndex] = rgba;
 }

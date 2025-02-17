@@ -205,7 +205,12 @@ Model* loadOBJ(const std::string& objFile) {
 				mesh->index.push_back(idx);
 				// Anything with the same material ID is given the same diffuse color
 				mesh->diffuse = (const glm::vec3&)materials[materialID].diffuse;
+				mesh->emmissive = 1.f * (const glm::vec3&)materials[materialID].emission;
 				mesh->diffuseTextureID = loadTexture(model, knownTexture, materials[materialID].diffuse_texname, modelDir);
+				mesh->specular = (const glm::vec3&)materials[materialID].specular;
+				mesh->shininess = materials[materialID].shininess;
+				mesh->ior = materials[materialID].ior;
+				mesh->illum = materials[materialID].illum;
 			}
 
 			if (mesh->vertex.empty())
@@ -249,11 +254,6 @@ TriangleMesh* processMesh(Model* model, aiMesh* mesh, const aiScene* scene, std:
 		if (mesh->mTextureCoords[0])
 			triMesh->texcoord.push_back(glm::vec2(
 				mesh->mTextureCoords[0][idx].x, mesh->mTextureCoords[0][idx].y));
-
-		if (mesh->mColors[0] != nullptr)
-			triMesh->diffuse = glm::vec3(mesh->mColors[0][idx].r, mesh->mColors[0][idx].g, mesh->mColors[0][idx].b);
-		else
-			triMesh->diffuse = glm::vec3(1.f);
 	}
 
 	// UPDATE NEEDED!!!!!!!!!!!!!
@@ -269,7 +269,43 @@ TriangleMesh* processMesh(Model* model, aiMesh* mesh, const aiScene* scene, std:
 
 	if (mesh->mMaterialIndex >= 0) {
 		aiString str;
-		scene->mMaterials[mesh->mMaterialIndex]->GetTexture(aiTextureType_DIFFUSE, 0, &str);
+		aiMaterial* mtl = scene->mMaterials[mesh->mMaterialIndex];
+		mtl->GetTexture(aiTextureType_DIFFUSE, 0, &str);
+		
+		aiColor4D getColor;
+		float getFloat;
+
+		// std::cout << std::endl;
+
+		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &getColor)) {
+			triMesh->diffuse = glm::vec3(getColor.r, getColor.g, getColor.b);
+			// std::cout << mtl->GetName().C_Str() << " Diffuse R: " << getColor.r << ", G: " << getColor.g << ", B: " << getColor.b << std::endl;
+		}
+		else
+			triMesh->diffuse = glm::vec3(1.f, 1.f, 1.f);
+
+		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &getColor)) {
+			triMesh->emmissive = 10.f * glm::vec3(getColor.r, getColor.g, getColor.b);
+			// std::cout << mtl->GetName().C_Str() << " Emmissive R: " << getColor.r << ", G: " << getColor.g << ", B: " << getColor.b << std::endl;
+		}
+		else
+			triMesh->emmissive = glm::vec3(0.f, 0.f, 0.f);
+
+		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_SPECULAR, &getColor)) {
+			triMesh->specular = 1.f * glm::vec3(getColor.r, getColor.g, getColor.b);
+			// std::cout << mtl->GetName().C_Str() << " Emmissive R: " << getColor.r << ", G: " << getColor.g << ", B: " << getColor.b << std::endl;
+		}
+		else
+			triMesh->specular = glm::vec3(0.f, 0.f, 0.f);
+
+		if (AI_SUCCESS == aiGetMaterialFloat(mtl, AI_MATKEY_SHININESS, &getFloat)) {
+			triMesh->shininess = getFloat;
+			// std::cout << mtl->GetName().C_Str() << " shininess: " << getFloat << std::endl;
+		}
+		else
+			triMesh->shininess = 10.f;
+
+		// std::cout << std::endl;
 		std::string texname = str.C_Str();
 		texname = texname;
 		triMesh->diffuseTextureID = loadTexture(model, knownTexture, texname, modelDir);

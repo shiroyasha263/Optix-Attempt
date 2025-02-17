@@ -10,6 +10,15 @@ struct StructuredBuffer {
 
 struct TriangleMeshSBTData {
 	float3 color;
+	float3 emmisive;
+	float3 specular;
+	float shininess;
+	float ior;
+	enum MaterialType {
+		DIFFUSE,
+		SPECULAR,
+		DIELECTRIC
+	} matType;
 	StructuredBuffer<float3> vertex;
 	StructuredBuffer<float3> normal;
 	StructuredBuffer<float2> texcoord;
@@ -20,6 +29,7 @@ struct TriangleMeshSBTData {
 
 struct LaunchParams {
 	StructuredBuffer<uint32_t> colorBuffer;
+	StructuredBuffer<float3> accumBuffer;
 	int2 fbSize;
 
 	struct Camera {

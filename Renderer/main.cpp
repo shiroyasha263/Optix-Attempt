@@ -96,7 +96,7 @@ inline uint32_t XOrShift32(uint32_t* state)
   world, then exit */
 extern "C" int main(int ac, char** av) {
     try {
-        Model* model = loadOBJ("C:/Users/Vishu.Main-Laptop/Downloads/optix-examples-main/models/CornellBox/CornellBox-Original.obj");
+        Model* model = loadOBJ("C:/Users/Vishu.Main-Laptop/Downloads/optix-examples-main/models/CornellBox/CornellBox-Water.obj");
         
         std::cout << "Model loaded perfectly!\n";
         

@@ -12,6 +12,11 @@ struct TriangleMesh {
 
 	// Material Properties
 	glm::vec3 diffuse;
+	glm::vec3 emmissive;
+	glm::vec3 specular;
+	float shininess;
+	float ior;
+	int illum;
 	int diffuseTextureID{ -1 };
 };
 
